@@ -5,30 +5,30 @@ import { revalidatePath } from "next/cache"
 import { z } from "zod"
 import { checkAdminAuth } from "./raffle-actions"
 
-// Validation schema
+// Esquema de validação
 const drawWinnerSchema = z.object({
-  raffleId: z.string().uuid("Invalid raffle ID"),
+  raffleId: z.string().uuid("ID de rifa inválido"),
   notes: z.string().optional(),
 })
 
-// Draw a winner
+// Sortear um ganhador
 export async function drawWinner(data: { raffleId: string; notes?: string }) {
   try {
-    // Validate input
+    // Validar entrada
     const validatedData = drawWinnerSchema.parse(data)
 
-    // Check if the user is authenticated as admin for this raffle
+    // Verificar se o usuário está autenticado como administrador para esta rifa
     const isAdmin = await checkAdminAuth(validatedData.raffleId)
     if (!isAdmin) {
-      throw new Error("Unauthorized: Admin access required")
+      throw new Error("Não autorizado: Acesso de administrador necessário")
     }
 
     const supabase = createServerClient()
 
-    // Get all purchases for this raffle
+    // Obter todas as compras para esta rifa
     const { data: purchases, error: purchasesError } = await supabase
       .from("purchases")
-      .select("id, name, cpf, numbers")
+      .select("id, name, email, numbers")
       .eq("raffle_id", validatedData.raffleId)
 
     if (purchasesError) {
@@ -38,11 +38,11 @@ export async function drawWinner(data: { raffleId: string; notes?: string }) {
     if (!purchases || purchases.length === 0) {
       return {
         success: false,
-        error: "No purchases found for this raffle",
+        error: "Nenhuma compra encontrada para esta rifa",
       }
     }
 
-    // Get all previously drawn winning numbers
+    // Obter todos os números vencedores anteriormente sorteados
     const { data: existingWinners, error: winnersError } = await supabase
       .from("winners")
       .select("winning_number")
@@ -54,8 +54,8 @@ export async function drawWinner(data: { raffleId: string; notes?: string }) {
 
     const drawnNumbers = existingWinners?.map((w) => w.winning_number) || []
 
-    // Flatten all purchased numbers and filter out already drawn numbers
-    const allPurchasedNumbers: { number: number; purchaseId: string; name: string; cpf: string }[] = []
+    // Achatar todos os números comprados e filtrar os já sorteados
+    const allPurchasedNumbers: { number: number; purchaseId: string; name: string; email: string }[] = []
 
     purchases.forEach((purchase) => {
       purchase.numbers.forEach((number) => {
@@ -64,7 +64,7 @@ export async function drawWinner(data: { raffleId: string; notes?: string }) {
             number,
             purchaseId: purchase.id,
             name: purchase.name,
-            cpf: purchase.cpf,
+            email: purchase.email,
           })
         }
       })
@@ -73,22 +73,22 @@ export async function drawWinner(data: { raffleId: string; notes?: string }) {
     if (allPurchasedNumbers.length === 0) {
       return {
         success: false,
-        error: "All purchased numbers have already been drawn",
+        error: "Todos os números comprados já foram sorteados",
       }
     }
 
-    // Randomly select a winner
+    // Selecionar aleatoriamente um ganhador
     const randomIndex = Math.floor(Math.random() * allPurchasedNumbers.length)
     const winner = allPurchasedNumbers[randomIndex]
 
-    // Insert the winner
+    // Inserir o ganhador
     const { data: newWinner, error: insertError } = await supabase
       .from("winners")
       .insert({
         raffle_id: validatedData.raffleId,
         purchase_id: winner.purchaseId,
         winner_name: winner.name,
-        winner_cpf: winner.cpf,
+        winner_email: winner.email,
         winning_number: winner.number,
         notes: validatedData.notes || null,
       })
@@ -106,31 +106,37 @@ export async function drawWinner(data: { raffleId: string; notes?: string }) {
       winner: {
         id: newWinner.id,
         name: newWinner.winner_name,
-        cpf: newWinner.winner_cpf,
+        email: newWinner.winner_email,
         number: newWinner.winning_number,
         drawnAt: newWinner.drawn_at,
       },
     }
   } catch (error) {
-    console.error("Error drawing winner:", error)
-    return { success: false, error: error instanceof Error ? error.message : "Unknown error" }
+    console.error("Erro ao sortear ganhador:", error)
+    return { success: false, error: error instanceof Error ? error.message : "Erro desconhecido" }
   }
 }
 
-// Get all winners for a raffle
+// Obter todos os ganhadores para uma rifa
 export async function getWinnersByRaffleId(raffleId: string) {
   try {
-    // Validate the UUID format
-    if (!z.string().uuid("Invalid raffle ID").safeParse(raffleId).success) {
-      throw new Error("Invalid raffle ID format")
-    }
-
     const supabase = createServerClient()
+
+    // Primeiro, obter o ID real da rifa (caso tenha sido fornecido o ID amigável)
+    const { data: raffle, error: raffleError } = await supabase
+      .from("raffles")
+      .select("id")
+      .or(`id.eq.${raffleId},friendly_id.eq.${raffleId}`)
+      .single()
+
+    if (raffleError) {
+      throw new Error("Rifa não encontrada")
+    }
 
     const { data: winners, error } = await supabase
       .from("winners")
       .select("*")
-      .eq("raffle_id", raffleId)
+      .eq("raffle_id", raffle.id)
       .order("drawn_at", { ascending: false })
 
     if (error) {
@@ -139,7 +145,7 @@ export async function getWinnersByRaffleId(raffleId: string) {
 
     return { success: true, winners }
   } catch (error) {
-    console.error("Error getting winners:", error)
-    return { success: false, error: error instanceof Error ? error.message : "Unknown error" }
+    console.error("Erro ao obter ganhadores:", error)
+    return { success: false, error: error instanceof Error ? error.message : "Erro desconhecido" }
   }
 }

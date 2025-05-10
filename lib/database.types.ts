@@ -34,6 +34,7 @@ export interface Database {
           cpf: string
           numbers: number[]
           created_at: string
+          payment_id: string | null
         }
         Insert: {
           id?: string
@@ -42,6 +43,7 @@ export interface Database {
           cpf: string
           numbers: number[]
           created_at?: string
+          payment_id?: string | null
         }
         Update: {
           id?: string
@@ -50,6 +52,48 @@ export interface Database {
           cpf?: string
           numbers?: number[]
           created_at?: string
+          payment_id?: string | null
+        }
+      }
+      payments: {
+        Row: {
+          id: string
+          raffle_id: string
+          purchase_id: string | null
+          payment_intent_id: string
+          amount: number
+          currency: string
+          status: string
+          customer_email: string | null
+          customer_name: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          raffle_id: string
+          purchase_id?: string | null
+          payment_intent_id: string
+          amount: number
+          currency?: string
+          status: string
+          customer_email?: string | null
+          customer_name?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          raffle_id?: string
+          purchase_id?: string | null
+          payment_intent_id?: string
+          amount?: number
+          currency?: string
+          status?: string
+          customer_email?: string | null
+          customer_name?: string | null
+          created_at?: string
+          updated_at?: string
         }
       }
       winners: {

@@ -6,7 +6,11 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/components/ui/use-toast"
-import { getPurchasesByRaffleId, purchaseNumbers } from "@/app/actions/raffle-actions"
+import { getPurchasesByRaffleId, getRafflePrice } from "@/app/actions/raffle-actions"
+import { createPaymentIntent } from "@/app/actions/payment-actions"
+import StripeProvider from "./stripe-provider"
+import PaymentForm from "./payment-form"
+import { Loader2 } from "lucide-react"
 
 interface RaffleNumbersProps {
   raffleId: string
@@ -17,31 +21,35 @@ export default function RaffleNumbers({ raffleId, totalNumbers }: RaffleNumbersP
   const { toast } = useToast()
   const [selectedNumbers, setSelectedNumbers] = useState<number[]>([])
   const [name, setName] = useState("")
-  const [cpf, setCpf] = useState("")
-  const [step, setStep] = useState<"select" | "info">("select")
+  const [email, setEmail] = useState("")
+  const [step, setStep] = useState<"select" | "info" | "payment" | "success">("select")
   const [purchasedNumbers, setPurchasedNumbers] = useState<number[]>([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
-
-  // Create an array of all numbers from 1 to totalNumbers
-  const allNumbers = Array.from({ length: totalNumbers }, (_, i) => i + 1)
+  const [pricePerNumber, setPricePerNumber] = useState(5) // Preço padrão
+  const [clientSecret, setClientSecret] = useState<string | null>(null)
+  const [paymentId, setPaymentId] = useState<string | null>(null)
 
   useEffect(() => {
-    const fetchPurchases = async () => {
+    const fetchData = async () => {
       try {
-        const result = await getPurchasesByRaffleId(raffleId)
-
-        if (!result.success) {
-          throw new Error(result.error)
+        // Buscar números comprados
+        const purchasesResult = await getPurchasesByRaffleId(raffleId)
+        if (!purchasesResult.success) {
+          throw new Error(purchasesResult.error)
         }
-
-        // Flatten all purchased numbers
-        const allPurchasedNumbers = result.purchases.flatMap((p) => p.numbers)
+        const allPurchasedNumbers = purchasesResult.purchases.flatMap((p) => p.numbers)
         setPurchasedNumbers(allPurchasedNumbers)
+
+        // Buscar preço da rifa
+        const priceResult = await getRafflePrice(raffleId)
+        if (priceResult.success && priceResult.pricePerNumber) {
+          setPricePerNumber(priceResult.pricePerNumber)
+        }
       } catch (err) {
         toast({
-          title: "Error",
-          description: err instanceof Error ? err.message : "Failed to load purchases",
+          title: "Erro",
+          description: err instanceof Error ? err.message : "Falha ao carregar dados da rifa",
           variant: "destructive",
         })
       } finally {
@@ -49,20 +57,20 @@ export default function RaffleNumbers({ raffleId, totalNumbers }: RaffleNumbersP
       }
     }
 
-    fetchPurchases()
+    fetchData()
   }, [raffleId, toast])
 
   const handleNumberClick = (number: number) => {
     if (purchasedNumbers.includes(number)) {
-      // Number is already purchased
+      // Número já foi comprado
       return
     }
 
     if (selectedNumbers.includes(number)) {
-      // Deselect the number
+      // Desmarcar o número
       setSelectedNumbers(selectedNumbers.filter((n) => n !== number))
     } else {
-      // Select the number
+      // Selecionar o número
       setSelectedNumbers([...selectedNumbers, number])
     }
   }
@@ -70,8 +78,8 @@ export default function RaffleNumbers({ raffleId, totalNumbers }: RaffleNumbersP
   const handleContinue = () => {
     if (selectedNumbers.length === 0) {
       toast({
-        title: "No Numbers Selected",
-        description: "Please select at least one number",
+        title: "Nenhum Número Selecionado",
+        description: "Por favor, selecione pelo menos um número",
         variant: "destructive",
       })
       return
@@ -80,20 +88,20 @@ export default function RaffleNumbers({ raffleId, totalNumbers }: RaffleNumbersP
     setStep("info")
   }
 
-  const handlePurchase = async () => {
+  const handleProceedToPayment = async () => {
     if (!name.trim()) {
       toast({
-        title: "Name Required",
-        description: "Please enter your name",
+        title: "Nome Obrigatório",
+        description: "Por favor, informe seu nome",
         variant: "destructive",
       })
       return
     }
 
-    if (!cpf.trim() || cpf.length !== 11) {
+    if (!email.trim() || !email.includes("@")) {
       toast({
-        title: "Valid CPF Required",
-        description: "Please enter a valid CPF (11 digits)",
+        title: "Email Inválido",
+        description: "Por favor, informe um email válido",
         variant: "destructive",
       })
       return
@@ -102,35 +110,29 @@ export default function RaffleNumbers({ raffleId, totalNumbers }: RaffleNumbersP
     setSubmitting(true)
 
     try {
-      const result = await purchaseNumbers({
+      // Calcular valor total
+      const amount = selectedNumbers.length * pricePerNumber
+
+      // Criar intenção de pagamento
+      const result = await createPaymentIntent({
         raffleId,
-        name,
-        cpf,
-        numbers: selectedNumbers,
+        amount,
+        customerName: name,
+        customerEmail: email,
+        numberCount: selectedNumbers.length,
       })
 
       if (!result.success) {
         throw new Error(result.error)
       }
 
-      // Update purchased numbers
-      setPurchasedNumbers([...purchasedNumbers, ...selectedNumbers])
-
-      // Show success message
-      toast({
-        title: "Numbers Purchased",
-        description: `You have successfully purchased ${selectedNumbers.length} number(s)`,
-      })
-
-      // Reset form
-      setSelectedNumbers([])
-      setName("")
-      setCpf("")
-      setStep("select")
+      setClientSecret(result.clientSecret!)
+      setPaymentId(result.paymentId!)
+      setStep("payment")
     } catch (err) {
       toast({
-        title: "Purchase Failed",
-        description: err instanceof Error ? err.message : "Failed to purchase numbers",
+        title: "Falha na Configuração do Pagamento",
+        description: err instanceof Error ? err.message : "Falha ao configurar o pagamento",
         variant: "destructive",
       })
     } finally {
@@ -138,14 +140,86 @@ export default function RaffleNumbers({ raffleId, totalNumbers }: RaffleNumbersP
     }
   }
 
-  const formatCPF = (value: string) => {
-    // Remove non-digits
-    const digits = value.replace(/\D/g, "")
-    return digits.slice(0, 11)
+  const handlePaymentSuccess = () => {
+    toast({
+      title: "Compra Realizada com Sucesso!",
+      description: `Você comprou ${selectedNumbers.length} números com sucesso.`,
+    })
+    setStep("success")
+  }
+
+  const handlePaymentCancel = () => {
+    setStep("info")
+  }
+
+  const handleReset = () => {
+    setSelectedNumbers([])
+    setName("")
+    setEmail("")
+    setClientSecret(null)
+    setPaymentId(null)
+    setStep("select")
   }
 
   if (loading) {
-    return <div>Loading raffle numbers...</div>
+    return (
+      <div className="flex justify-center p-8">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+
+  if (step === "success") {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Compra Realizada com Sucesso!</CardTitle>
+          <CardDescription>Seus números da rifa foram comprados com sucesso.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="rounded-lg bg-green-50 p-4 border border-green-200">
+            <h3 className="font-medium text-green-800">Obrigado pela sua compra!</h3>
+            <p className="text-sm text-green-700 mt-1">Você comprou {selectedNumbers.length} números com sucesso.</p>
+          </div>
+
+          <div>
+            <p className="text-sm font-medium">Seus Números:</p>
+            <div className="mt-2 flex flex-wrap gap-1">
+              {selectedNumbers.map((number) => (
+                <div
+                  key={number}
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-xs text-primary-foreground"
+                >
+                  {number}
+                </div>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+        <CardFooter>
+          <Button onClick={handleReset} className="w-full">
+            Comprar Mais Números
+          </Button>
+        </CardFooter>
+      </Card>
+    )
+  }
+
+  if (step === "payment" && clientSecret && paymentId) {
+    return (
+      <StripeProvider clientSecret={clientSecret}>
+        <PaymentForm
+          clientSecret={clientSecret}
+          paymentId={paymentId}
+          raffleId={raffleId}
+          name={name}
+          email={email}
+          numbers={selectedNumbers}
+          onSuccess={handlePaymentSuccess}
+          onCancel={handlePaymentCancel}
+        />
+      </StripeProvider>
+    )
   }
 
   return (
@@ -154,12 +228,14 @@ export default function RaffleNumbers({ raffleId, totalNumbers }: RaffleNumbersP
         <>
           <Card>
             <CardHeader>
-              <CardTitle>Select Numbers</CardTitle>
-              <CardDescription>Click on the numbers you want to purchase</CardDescription>
+              <CardTitle>Selecione os Números</CardTitle>
+              <CardDescription>
+                Clique nos números que deseja comprar. Cada número custa R${pricePerNumber.toFixed(2)}.
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-5 gap-2 sm:grid-cols-8 md:grid-cols-10">
-                {allNumbers.map((number) => {
+                {Array.from({ length: totalNumbers }, (_, i) => i + 1).map((number) => {
                   const isPurchased = purchasedNumbers.includes(number)
                   const isSelected = selectedNumbers.includes(number)
 
@@ -182,19 +258,22 @@ export default function RaffleNumbers({ raffleId, totalNumbers }: RaffleNumbersP
                 <div className="flex items-center space-x-2">
                   <div className="flex items-center space-x-1">
                     <div className="h-3 w-3 rounded-full bg-primary"></div>
-                    <span className="text-xs">Selected</span>
+                    <span className="text-xs">Selecionado</span>
                   </div>
                   <div className="flex items-center space-x-1">
                     <div className="h-3 w-3 rounded-full bg-muted"></div>
-                    <span className="text-xs">Purchased</span>
+                    <span className="text-xs">Comprado</span>
                   </div>
                 </div>
-                <div>
-                  <span className="text-sm font-medium">Selected: {selectedNumbers.length}</span>
+                <div className="flex flex-col items-end">
+                  <span className="text-sm font-medium">Selecionados: {selectedNumbers.length}</span>
+                  <span className="text-xs text-muted-foreground">
+                    Total: R${(selectedNumbers.length * pricePerNumber).toFixed(2)}
+                  </span>
                 </div>
               </div>
               <Button className="w-full" onClick={handleContinue} disabled={selectedNumbers.length === 0}>
-                Continue
+                Continuar
               </Button>
             </CardFooter>
           </Card>
@@ -202,15 +281,15 @@ export default function RaffleNumbers({ raffleId, totalNumbers }: RaffleNumbersP
       ) : (
         <Card>
           <CardHeader>
-            <CardTitle>Your Information</CardTitle>
-            <CardDescription>Enter your details to complete the purchase</CardDescription>
+            <CardTitle>Suas Informações</CardTitle>
+            <CardDescription>Informe seus dados para completar a compra</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="name">Full Name</Label>
+              <Label htmlFor="name">Nome Completo</Label>
               <Input
                 id="name"
-                placeholder="Enter your full name"
+                placeholder="Digite seu nome completo"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
@@ -218,20 +297,20 @@ export default function RaffleNumbers({ raffleId, totalNumbers }: RaffleNumbersP
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="cpf">CPF</Label>
+              <Label htmlFor="email">Email</Label>
               <Input
-                id="cpf"
-                placeholder="Enter your CPF"
-                value={cpf}
-                onChange={(e) => setCpf(formatCPF(e.target.value))}
-                maxLength={11}
+                id="email"
+                type="email"
+                placeholder="Digite seu email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 required
               />
-              <p className="text-xs text-muted-foreground">Enter your CPF without dots or dashes</p>
+              <p className="text-xs text-muted-foreground">Enviaremos o recibo para este email</p>
             </div>
 
             <div>
-              <p className="text-sm font-medium">Selected Numbers:</p>
+              <p className="text-sm font-medium">Números Selecionados:</p>
               <div className="mt-2 flex flex-wrap gap-1">
                 {selectedNumbers.map((number) => (
                   <div
@@ -243,13 +322,36 @@ export default function RaffleNumbers({ raffleId, totalNumbers }: RaffleNumbersP
                 ))}
               </div>
             </div>
+
+            <div className="rounded-lg border p-4">
+              <p className="text-sm font-medium">Resumo do Pedido</p>
+              <div className="mt-2 space-y-1">
+                <div className="flex justify-between text-sm">
+                  <span>{selectedNumbers.length} números</span>
+                  <span>R${(selectedNumbers.length * pricePerNumber).toFixed(2)}</span>
+                </div>
+                <div className="border-t pt-1 mt-1">
+                  <div className="flex justify-between font-medium">
+                    <span>Total</span>
+                    <span>R${(selectedNumbers.length * pricePerNumber).toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </CardContent>
           <CardFooter className="flex justify-between">
             <Button variant="outline" onClick={() => setStep("select")}>
-              Back
+              Voltar
             </Button>
-            <Button onClick={handlePurchase} disabled={submitting}>
-              {submitting ? "Processing..." : "Complete Purchase"}
+            <Button onClick={handleProceedToPayment} disabled={submitting}>
+              {submitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Processando...
+                </>
+              ) : (
+                "Prosseguir para Pagamento"
+              )}
             </Button>
           </CardFooter>
         </Card>

@@ -9,13 +9,14 @@ import { Trophy, Gift, Calendar } from "lucide-react"
 import { drawWinner, getWinnersByRaffleId } from "@/app/actions/winner-actions"
 import { useEffect } from "react"
 import { formatDistanceToNow } from "date-fns"
+import { ptBR } from "date-fns/locale"
 
 interface Winner {
   id: string
   raffle_id: string
   purchase_id: string | null
   winner_name: string
-  winner_cpf: string
+  winner_email: string
   winning_number: number
   drawn_at: string
   notes: string | null
@@ -45,8 +46,8 @@ export default function WinnerSection({ raffleId }: WinnerSectionProps) {
         setWinners(result.winners)
       } catch (err) {
         toast({
-          title: "Error",
-          description: err instanceof Error ? err.message : "Failed to load winners",
+          title: "Erro",
+          description: err instanceof Error ? err.message : "Falha ao carregar ganhadores",
           variant: "destructive",
         })
       } finally {
@@ -70,28 +71,28 @@ export default function WinnerSection({ raffleId }: WinnerSectionProps) {
         throw new Error(result.error)
       }
 
-      // Refresh the winners list
+      // Atualizar a lista de ganhadores
       const winnersResult = await getWinnersByRaffleId(raffleId)
       if (winnersResult.success) {
         setWinners(winnersResult.winners)
       }
 
-      // Show success message
+      // Mostrar mensagem de sucesso
       toast({
-        title: "Winner Selected!",
-        description: `Congratulations to ${result.winner.name} with number ${result.winner.number}!`,
+        title: "Ganhador Selecionado!",
+        description: `Parabéns a ${result.winner.name} com o número ${result.winner.number}!`,
       })
 
-      // Show confetti animation
+      // Mostrar animação de confete
       setShowConfetti(true)
       setTimeout(() => setShowConfetti(false), 5000)
 
-      // Reset notes
+      // Resetar notas
       setNotes("")
     } catch (err) {
       toast({
-        title: "Drawing Failed",
-        description: err instanceof Error ? err.message : "Failed to draw a winner",
+        title: "Falha no Sorteio",
+        description: err instanceof Error ? err.message : "Falha ao sortear um ganhador",
         variant: "destructive",
       })
     } finally {
@@ -99,21 +100,21 @@ export default function WinnerSection({ raffleId }: WinnerSectionProps) {
     }
   }
 
-  const formatCPF = (cpf: string) => {
-    return `${cpf.substring(0, 3)}*****${cpf.substring(8)}`
+  const formatEmail = (email: string) => {
+    return email.replace(/(.{2})(.*)(@.*)/, "$1***$3")
   }
 
   const formatDate = (dateString: string) => {
     try {
       const date = new Date(dateString)
-      return formatDistanceToNow(date, { addSuffix: true })
+      return formatDistanceToNow(date, { addSuffix: true, locale: ptBR })
     } catch (e) {
       return dateString
     }
   }
 
   if (loading) {
-    return <div>Loading winners...</div>
+    return <div>Carregando ganhadores...</div>
   }
 
   return (
@@ -121,7 +122,7 @@ export default function WinnerSection({ raffleId }: WinnerSectionProps) {
       {showConfetti && (
         <div className="fixed inset-0 pointer-events-none z-50">
           <div className="absolute inset-0 overflow-hidden">
-            {/* Simple CSS confetti animation */}
+            {/* Animação simples de confete com CSS */}
             <div className="confetti-container">
               {Array.from({ length: 100 }).map((_, i) => (
                 <div
@@ -143,14 +144,14 @@ export default function WinnerSection({ raffleId }: WinnerSectionProps) {
         <CardHeader>
           <CardTitle className="flex items-center">
             <Trophy className="mr-2 h-5 w-5 text-yellow-500" />
-            Draw a Winner
+            Sortear um Ganhador
           </CardTitle>
-          <CardDescription>Randomly select a winner from all purchased numbers</CardDescription>
+          <CardDescription>Selecione aleatoriamente um ganhador entre todos os números comprados</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Textarea
-              placeholder="Optional notes about this drawing (e.g., 'First prize', 'Monthly drawing')"
+              placeholder="Notas opcionais sobre este sorteio (ex: 'Primeiro prêmio', 'Sorteio mensal')"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               className="resize-none"
@@ -160,7 +161,7 @@ export default function WinnerSection({ raffleId }: WinnerSectionProps) {
         </CardContent>
         <CardFooter>
           <Button onClick={handleDrawWinner} disabled={drawing} className="w-full">
-            {drawing ? "Selecting Winner..." : "Draw Winner"}
+            {drawing ? "Selecionando Ganhador..." : "Sortear Ganhador"}
           </Button>
         </CardFooter>
       </Card>
@@ -170,9 +171,9 @@ export default function WinnerSection({ raffleId }: WinnerSectionProps) {
           <CardHeader>
             <CardTitle className="flex items-center">
               <Gift className="mr-2 h-5 w-5 text-primary" />
-              Past Winners
+              Ganhadores Anteriores
             </CardTitle>
-            <CardDescription>All winners drawn for this raffle</CardDescription>
+            <CardDescription>Todos os ganhadores sorteados para esta rifa</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
@@ -186,7 +187,7 @@ export default function WinnerSection({ raffleId }: WinnerSectionProps) {
                         </span>
                         <p className="font-medium">{winner.winner_name}</p>
                       </div>
-                      <p className="text-sm text-muted-foreground">CPF: {formatCPF(winner.winner_cpf)}</p>
+                      <p className="text-sm text-muted-foreground">Email: {formatEmail(winner.winner_email)}</p>
                       <div className="flex items-center mt-1 text-xs text-muted-foreground">
                         <Calendar className="mr-1 h-3 w-3" />
                         {formatDate(winner.drawn_at)}

@@ -25,19 +25,19 @@ export default function CreateRaffle() {
     e.preventDefault()
     setError("")
 
-    // Validate inputs
+    // Validar entradas
     if (!totalNumbers || isNaN(Number(totalNumbers)) || Number(totalNumbers) <= 0) {
-      setError("Please enter a valid number of raffle tickets")
+      setError("Por favor, digite um número válido de bilhetes de rifa")
       return
     }
 
     if (!password) {
-      setError("Please enter an admin password")
+      setError("Por favor, digite uma senha de administrador")
       return
     }
 
     if (password !== confirmPassword) {
-      setError("Passwords do not match")
+      setError("As senhas não coincidem")
       return
     }
 
@@ -55,14 +55,14 @@ export default function CreateRaffle() {
       }
 
       toast({
-        title: "Raffle Created",
-        description: `Your raffle has been created successfully`,
+        title: "Rifa Criada",
+        description: `Sua rifa foi criada com sucesso`,
       })
 
-      // Redirect to the raffle page
-      router.push(`/raffle/${result.raffleId}`)
+      // Redirecionar para a página da rifa
+      router.push(`/raffle/${result.friendlyId || result.raffleId}`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create raffle")
+      setError(err instanceof Error ? err.message : "Falha ao criar rifa")
       setLoading(false)
     }
   }
@@ -71,37 +71,37 @@ export default function CreateRaffle() {
     <main className="container flex min-h-screen flex-col items-center justify-center p-4">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle>Create a New Raffle</CardTitle>
-          <CardDescription>Set up the details for your raffle</CardDescription>
+          <CardTitle>Criar uma Nova Rifa</CardTitle>
+          <CardDescription>Configure os detalhes para sua rifa</CardDescription>
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="title">Raffle Title (Optional)</Label>
+              <Label htmlFor="title">Título da Rifa (Opcional)</Label>
               <Input
                 id="title"
-                placeholder="e.g. Charity Fundraiser"
+                placeholder="ex: Arrecadação para Caridade"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="total-numbers">Total Numbers Available</Label>
+              <Label htmlFor="total-numbers">Total de Números Disponíveis</Label>
               <Input
                 id="total-numbers"
                 type="number"
-                placeholder="e.g. 100"
+                placeholder="ex: 100"
                 value={totalNumbers}
                 onChange={(e) => setTotalNumbers(e.target.value)}
                 min="1"
                 required
               />
-              <p className="text-xs text-muted-foreground">Enter how many numbers will be available for purchase</p>
+              <p className="text-xs text-muted-foreground">Digite quantos números estarão disponíveis para compra</p>
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">Admin Password</Label>
+              <Label htmlFor="password">Senha de Administrador</Label>
               <Input
                 id="password"
                 type="password"
@@ -112,7 +112,7 @@ export default function CreateRaffle() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="confirm-password">Confirm Password</Label>
+              <Label htmlFor="confirm-password">Confirmar Senha</Label>
               <Input
                 id="confirm-password"
                 type="password"
@@ -126,7 +126,7 @@ export default function CreateRaffle() {
           </CardContent>
           <CardFooter>
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Creating..." : "Create Raffle"}
+              {loading ? "Criando..." : "Criar Rifa"}
             </Button>
           </CardFooter>
         </form>

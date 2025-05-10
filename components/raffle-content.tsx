@@ -11,6 +11,7 @@ import { Lock, LogOut } from "lucide-react"
 import Link from "next/link"
 import RaffleNumbers from "@/components/raffle-numbers"
 import AdminPanel from "@/components/admin-panel"
+import QRCodeDialog from "@/components/qr-code-dialog"
 import { checkAdminAuth, getRaffleById, logoutAdmin, verifyAdminPassword } from "@/app/actions/raffle-actions"
 
 interface RaffleData {
@@ -18,6 +19,7 @@ interface RaffleData {
   title: string | null
   total_numbers: number
   created_at: string
+  friendly_id?: string
 }
 
 export default function RaffleContent({ raffleId }: { raffleId: string }) {
@@ -42,11 +44,11 @@ export default function RaffleContent({ raffleId }: { raffleId: string }) {
 
         setRaffleData(result.raffle)
 
-        // Check if user is already authenticated as admin
-        const adminStatus = await checkAdminAuth(raffleId)
+        // Verificar se o usuário já está autenticado como administrador
+        const adminStatus = await checkAdminAuth(result.raffle.id)
         setIsAdmin(adminStatus)
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load raffle")
+        setError(err instanceof Error ? err.message : "Falha ao carregar rifa")
       } finally {
         setLoading(false)
       }
@@ -55,7 +57,7 @@ export default function RaffleContent({ raffleId }: { raffleId: string }) {
     fetchRaffle()
   }, [raffleId])
 
-  // Rate limit countdown timer
+  // Timer de contagem regressiva para limitação de taxa
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null
 
@@ -79,8 +81,8 @@ export default function RaffleContent({ raffleId }: { raffleId: string }) {
   const handleAdminLogin = async () => {
     if (!adminPassword.trim()) {
       toast({
-        title: "Password Required",
-        description: "Please enter the admin password",
+        title: "Senha Obrigatória",
+        description: "Por favor, digite a senha de administrador",
         variant: "destructive",
       })
       return
@@ -94,7 +96,7 @@ export default function RaffleContent({ raffleId }: { raffleId: string }) {
       if (!result.success) {
         if (result.isRateLimited) {
           setIsRateLimited(true)
-          setRateLimitTimer(60 * 60) // 1 hour in seconds
+          setRateLimitTimer(60 * 60) // 1 hora em segundos
         }
         throw new Error(result.error)
       }
@@ -103,20 +105,20 @@ export default function RaffleContent({ raffleId }: { raffleId: string }) {
         setIsAdmin(true)
         setAdminPassword("")
         toast({
-          title: "Admin Access Granted",
-          description: "You now have admin access to this raffle",
+          title: "Acesso de Administrador Concedido",
+          description: "Você agora tem acesso de administrador a esta rifa",
         })
       } else {
         toast({
-          title: "Invalid Password",
-          description: "The password you entered is incorrect",
+          title: "Senha Inválida",
+          description: "A senha que você digitou está incorreta",
           variant: "destructive",
         })
       }
     } catch (err) {
       toast({
-        title: "Verification Failed",
-        description: err instanceof Error ? err.message : "Failed to verify password",
+        title: "Falha na Verificação",
+        description: err instanceof Error ? err.message : "Falha ao verificar senha",
         variant: "destructive",
       })
     } finally {
@@ -131,36 +133,36 @@ export default function RaffleContent({ raffleId }: { raffleId: string }) {
       if (result.success) {
         setIsAdmin(false)
         toast({
-          title: "Logged Out",
-          description: "You have been logged out of admin access",
+          title: "Desconectado",
+          description: "Você foi desconectado do acesso de administrador",
         })
       } else {
         throw new Error(result.error)
       }
     } catch (err) {
       toast({
-        title: "Logout Failed",
-        description: err instanceof Error ? err.message : "Failed to log out",
+        title: "Falha ao Desconectar",
+        description: err instanceof Error ? err.message : "Falha ao desconectar",
         variant: "destructive",
       })
     }
   }
 
   if (loading) {
-    return <div>Loading raffle data...</div>
+    return <div>Carregando dados da rifa...</div>
   }
 
   if (error || !raffleData) {
     return (
       <Card className="w-full max-w-md mx-auto">
         <CardHeader>
-          <CardTitle>Error</CardTitle>
-          <CardDescription>{error || "Failed to load raffle"}</CardDescription>
+          <CardTitle>Erro</CardTitle>
+          <CardDescription>{error || "Falha ao carregar rifa"}</CardDescription>
         </CardHeader>
         <CardFooter>
           <Link href="/" className="w-full">
             <Button variant="outline" className="w-full">
-              Back to Home
+              Voltar para Início
             </Button>
           </Link>
         </CardFooter>
@@ -170,51 +172,61 @@ export default function RaffleContent({ raffleId }: { raffleId: string }) {
 
   return (
     <>
-      <div className="mb-6 flex justify-between items-center">
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">
-            {raffleData.title ? raffleData.title : `Raffle #${raffleId.slice(0, 8)}`}
+            {raffleData.title ? raffleData.title : `Rifa #${raffleData.friendly_id || raffleId.slice(0, 8)}`}
           </h1>
-          <p className="text-muted-foreground">Total Numbers: {raffleData.total_numbers}</p>
+          <p className="text-muted-foreground">Total de Números: {raffleData.total_numbers}</p>
         </div>
-        {isAdmin && (
-          <Button variant="outline" size="sm" onClick={handleLogout}>
-            <LogOut className="mr-2 h-4 w-4" />
-            Logout Admin
-          </Button>
-        )}
+        <div className="flex gap-2">
+          <QRCodeDialog raffleId={raffleData.id} title={raffleData.title} friendlyId={raffleData.friendly_id} />
+          {isAdmin && (
+            <Button variant="outline" size="sm" onClick={handleLogout}>
+              <LogOut className="mr-2 h-4 w-4" />
+              Sair Admin
+            </Button>
+          )}
+        </div>
       </div>
 
       <Tabs defaultValue="buy" className="w-full">
         <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="buy">Buy Numbers</TabsTrigger>
+          <TabsTrigger value="buy">Comprar Números</TabsTrigger>
           <TabsTrigger value="admin">Admin</TabsTrigger>
         </TabsList>
 
         <TabsContent value="buy" className="space-y-4">
-          <RaffleNumbers raffleId={raffleId} totalNumbers={raffleData.total_numbers} />
+          <RaffleNumbers raffleId={raffleData.id} totalNumbers={raffleData.total_numbers} />
         </TabsContent>
 
         <TabsContent value="admin" className="space-y-4">
           {isAdmin ? (
-            <AdminPanel raffleId={raffleId} totalNumbers={raffleData.total_numbers} />
+            <AdminPanel
+              raffleId={raffleData.id}
+              totalNumbers={raffleData.total_numbers}
+              friendlyId={raffleData.friendly_id}
+            />
           ) : (
             <Card>
               <CardHeader>
-                <CardTitle>Admin Access</CardTitle>
-                <CardDescription>Enter the admin password to access admin features</CardDescription>
+                <CardTitle>Acesso de Administrador</CardTitle>
+                <CardDescription>
+                  Digite a senha de administrador para acessar os recursos de administrador
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {isRateLimited ? (
                   <div className="p-4 border border-destructive/50 rounded-md bg-destructive/10 text-center">
-                    <p className="text-destructive font-medium mb-2">Too many failed attempts</p>
+                    <p className="text-destructive font-medium mb-2">Muitas tentativas falhas</p>
                     <p className="text-sm text-muted-foreground">
-                      Please try again in {Math.floor(rateLimitTimer / 60)} minutes and {rateLimitTimer % 60} seconds
+                      Por favor, tente novamente em {Math.floor(rateLimitTimer / 60)} minutos e {rateLimitTimer % 60}{" "}
+                      segundos
                     </p>
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    <Label htmlFor="admin-password">Admin Password</Label>
+                    <Label htmlFor="admin-password">Senha de Administrador</Label>
                     <div className="flex space-x-2">
                       <Input
                         id="admin-password"
@@ -224,7 +236,7 @@ export default function RaffleContent({ raffleId }: { raffleId: string }) {
                       />
                       <Button onClick={handleAdminLogin} disabled={verifying}>
                         <Lock className="mr-2 h-4 w-4" />
-                        {verifying ? "Verifying..." : "Login"}
+                        {verifying ? "Verificando..." : "Entrar"}
                       </Button>
                     </div>
                   </div>
