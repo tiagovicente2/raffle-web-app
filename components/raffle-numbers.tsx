@@ -10,7 +10,9 @@ import { getPurchasesByRaffleId, getRafflePrice } from "@/app/actions/raffle-act
 import { createPaymentIntent } from "@/app/actions/payment-actions"
 import StripeProvider from "./stripe-provider"
 import PaymentForm from "./payment-form"
-import { Loader2 } from "lucide-react"
+import PixPayment from "./pix-payment"
+import { Loader2, CreditCard, QrCode } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 interface RaffleNumbersProps {
   raffleId: string
@@ -29,6 +31,13 @@ export default function RaffleNumbers({ raffleId, totalNumbers }: RaffleNumbersP
   const [pricePerNumber, setPricePerNumber] = useState(5) // Preço padrão
   const [clientSecret, setClientSecret] = useState<string | null>(null)
   const [paymentId, setPaymentId] = useState<string | null>(null)
+  const [paymentMethod, setPaymentMethod] = useState<"card" | "pix">("card")
+  const [pixInfo, setPixInfo] = useState<{
+    qrCode: string
+    qrCodeData: string
+    expiresAt: string
+  } | null>(null)
+  const [paymentIntentId, setPaymentIntentId] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchData = async () => {
@@ -88,7 +97,7 @@ export default function RaffleNumbers({ raffleId, totalNumbers }: RaffleNumbersP
     setStep("info")
   }
 
-  const handleProceedToPayment = async () => {
+  const handleProceedToPayment = async (method: "card" | "pix") => {
     if (!name.trim()) {
       toast({
         title: "Nome Obrigatório",
@@ -107,6 +116,7 @@ export default function RaffleNumbers({ raffleId, totalNumbers }: RaffleNumbersP
       return
     }
 
+    setPaymentMethod(method)
     setSubmitting(true)
 
     try {
@@ -120,6 +130,7 @@ export default function RaffleNumbers({ raffleId, totalNumbers }: RaffleNumbersP
         customerName: name,
         customerEmail: email,
         numberCount: selectedNumbers.length,
+        paymentMethod: method,
       })
 
       if (!result.success) {
@@ -128,6 +139,15 @@ export default function RaffleNumbers({ raffleId, totalNumbers }: RaffleNumbersP
 
       setClientSecret(result.clientSecret!)
       setPaymentId(result.paymentId!)
+
+      // Para pagamentos PIX, armazenar informações do QR code
+      if (method === "pix" && result.pixInfo) {
+        setPixInfo(result.pixInfo)
+        // Extrair o ID da intenção de pagamento do clientSecret
+        const intentId = result.clientSecret.split("_secret_")[0]
+        setPaymentIntentId(intentId)
+      }
+
       setStep("payment")
     } catch (err) {
       toast({
@@ -158,6 +178,8 @@ export default function RaffleNumbers({ raffleId, totalNumbers }: RaffleNumbersP
     setEmail("")
     setClientSecret(null)
     setPaymentId(null)
+    setPixInfo(null)
+    setPaymentIntentId(null)
     setStep("select")
   }
 
@@ -205,20 +227,46 @@ export default function RaffleNumbers({ raffleId, totalNumbers }: RaffleNumbersP
     )
   }
 
-  if (step === "payment" && clientSecret && paymentId) {
-    return (
-      <StripeProvider clientSecret={clientSecret}>
-        <PaymentForm
-          clientSecret={clientSecret}
+  if (step === "payment") {
+    if (paymentMethod === "pix" && pixInfo && paymentIntentId && paymentId) {
+      return (
+        <PixPayment
+          paymentIntentId={paymentIntentId}
           paymentId={paymentId}
           raffleId={raffleId}
           name={name}
           email={email}
           numbers={selectedNumbers}
+          qrCodeUrl={pixInfo.qrCode}
+          qrCodeData={pixInfo.qrCodeData}
+          expiresAt={pixInfo.expiresAt}
           onSuccess={handlePaymentSuccess}
           onCancel={handlePaymentCancel}
         />
-      </StripeProvider>
+      )
+    }
+
+    if (paymentMethod === "card" && clientSecret && paymentId) {
+      return (
+        <StripeProvider clientSecret={clientSecret}>
+          <PaymentForm
+            clientSecret={clientSecret}
+            paymentId={paymentId}
+            raffleId={raffleId}
+            name={name}
+            email={email}
+            numbers={selectedNumbers}
+            onSuccess={handlePaymentSuccess}
+            onCancel={handlePaymentCancel}
+          />
+        </StripeProvider>
+      )
+    }
+
+    return (
+      <div className="flex justify-center p-8">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
     )
   }
 
@@ -338,20 +386,56 @@ export default function RaffleNumbers({ raffleId, totalNumbers }: RaffleNumbersP
                 </div>
               </div>
             </div>
+
+            <div className="pt-4">
+              <Label className="mb-2 block">Escolha o método de pagamento:</Label>
+              <Tabs defaultValue="card" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="card">
+                    <CreditCard className="mr-2 h-4 w-4" />
+                    Cartão de Crédito
+                  </TabsTrigger>
+                  <TabsTrigger value="pix">
+                    <QrCode className="mr-2 h-4 w-4" />
+                    PIX
+                  </TabsTrigger>
+                </TabsList>
+                <TabsContent value="card" className="pt-4">
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Pague com cartão de crédito de forma segura através do Stripe.
+                  </p>
+                  <Button onClick={() => handleProceedToPayment("card")} disabled={submitting} className="w-full">
+                    {submitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Processando...
+                      </>
+                    ) : (
+                      "Pagar com Cartão"
+                    )}
+                  </Button>
+                </TabsContent>
+                <TabsContent value="pix" className="pt-4">
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Pague instantaneamente usando PIX. O pagamento é confirmado em segundos.
+                  </p>
+                  <Button onClick={() => handleProceedToPayment("pix")} disabled={submitting} className="w-full">
+                    {submitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Processando...
+                      </>
+                    ) : (
+                      "Pagar com PIX"
+                    )}
+                  </Button>
+                </TabsContent>
+              </Tabs>
+            </div>
           </CardContent>
-          <CardFooter className="flex justify-between">
-            <Button variant="outline" onClick={() => setStep("select")}>
+          <CardFooter>
+            <Button variant="outline" onClick={() => setStep("select")} className="w-full">
               Voltar
-            </Button>
-            <Button onClick={handleProceedToPayment} disabled={submitting}>
-              {submitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Processando...
-                </>
-              ) : (
-                "Prosseguir para Pagamento"
-              )}
             </Button>
           </CardFooter>
         </Card>
